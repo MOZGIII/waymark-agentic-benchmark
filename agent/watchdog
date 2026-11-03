@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Keep running token totals for an agent session and stop it at the budget.
+
+Started by run-agent next to the agent process. Claude Code reports usage on
+every assistant line of its stream-json output, repeated for each line of one
+response, so lines are deduplicated by message id. Codex reports usage on its
+JSON stream only when the turn completes, so its cumulative counts are read
+from the session rollout it writes under ~/.codex/sessions.
+
+Totals are kept comparable across agents: input excludes cached tokens, which
+are reported separately, and total is the sum of all four kinds. The budget
+applies to total.
+"""
+
+import argparse
+import datetime
+import glob
+import json
+import os
+import signal
+import sys
+import time
+
+POLL_SECONDS = 1.0
+GRACE_SECONDS = 30
+
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class Tail:
+    """Read whole new lines from a file that may not exist yet."""
+
+    def __init__(self, path):
+        self.path = path
+        self.offset = 0
+        self.partial = b""
+
+    def lines(self):
+        try:
+            with open(self.path, "rb") as handle:
+                handle.seek(self.offset)
+                data = handle.read()
+                self.offset = handle.tell()
+        except FileNotFoundError:
+            return
+        data = self.partial + data
+        *whole, self.partial = data.split(b"\n")
+        for raw in whole:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                yield json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+
+class Usage:
+    def __init__(self, agent, budget):
+        self.agent = agent
+        self.budget = budget
+        self.input = self.output = self.cache_read = self.cache_creation = 0
+        self.messages = 0
+        self.seen = set()
+        self.source = None
+
+    @property
+    def total(self):
+        return self.input + self.output + self.cache_read + self.cache_creation
+
+    def record(self):
+        return {
+            "agent": self.agent,
+            "input": self.input,
+            "output": self.output,
+            "cache_read": self.cache_read,
+            "cache_creation": self.cache_creation,
+            "total": self.total,
+            "messages": self.messages,
+            "budget": self.budget,
+            "over_budget": self.total >= self.budget,
+            "source": self.source,
+            "updated_at": now(),
+        }
+
+    def claude_event(self, event):
+        if event.get("type") == "assistant":
+            message = event.get("message") or {}
+            usage = message.get("usage") or {}
+            identity = message.get("id")
+            if not usage or identity in self.seen:
+                return False
+            self.seen.add(identity)
+            self.input += usage.get("input_tokens", 0)
+            self.output += usage.get("output_tokens", 0)
+            self.cache_read += usage.get("cache_read_input_tokens", 0)
+            self.cache_creation += usage.get("cache_creation_input_tokens", 0)
+            self.messages += 1
+            self.source = "stream"
+            return True
+        if event.get("type") == "result" and event.get("usage"):
+            # The authoritative end-of-run totals for the main loop.
+            usage = event["usage"]
+            self.input = usage.get("input_tokens", 0)
+            self.output = usage.get("output_tokens", 0)
+            self.cache_read = usage.get("cache_read_input_tokens", 0)
+            self.cache_creation = usage.get("cache_creation_input_tokens", 0)
+            self.source = "result"
+            return True
+        return False
+
+    def codex_totals(self, usage):
+        cached = usage.get("cached_input_tokens", 0)
+        self.input = usage.get("input_tokens", 0) - cached
+        self.cache_read = cached
+        self.cache_creation = 0
+        self.output = usage.get("output_tokens", 0)
+        return True
+
+    def codex_rollout_event(self, event):
+        payload = event.get("payload") or {}
+        if event.get("type") != "event_msg" or payload.get("type") != "token_count":
+            return False
+        info = payload.get("info") or {}
+        totals = info.get("total_token_usage")
+        if not totals:
+            return False
+        self.messages += 1
+        self.source = "rollout"
+        return self.codex_totals(totals)
+
+    def codex_stream_event(self, event):
+        if event.get("type") == "turn.completed" and event.get("usage"):
+            self.source = "stream"
+            return self.codex_totals(event["usage"])
+        return False
+
+
+def newest_rollout(since):
+    """The Codex session rollout written since the session started, if any."""
+    pattern = os.path.expanduser("~/.codex/sessions/**/rollout-*.jsonl")
+    candidates = [p for p in glob.glob(pattern, recursive=True) if os.path.getmtime(p) >= since]
+    return max(candidates, key=os.path.getmtime) if candidates else None
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def stop(pid):
+    """Interrupt first so the CLI can end its turn, then insist."""
+    for sig, wait in ((signal.SIGINT, GRACE_SECONDS), (signal.SIGTERM, 10), (signal.SIGKILL, 0)):
+        if not alive(pid):
+            return
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + wait
+        while alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.5)
+
+
+def write(path, record):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as handle:
+        json.dump(record, handle)
+    os.replace(tmp, path)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--agent", required=True, choices=["claude", "codex"])
+    parser.add_argument("--pid", required=True, type=int)
+    parser.add_argument("--events", required=True)
+    parser.add_argument("--usage", required=True)
+    parser.add_argument("--token-budget", required=True, type=int)
+    parser.add_argument("--started", required=True, help="RFC 3339 UTC start time")
+    args = parser.parse_args()
+
+    started = datetime.datetime.strptime(args.started, "%Y-%m-%dT%H:%M:%SZ")
+    started = started.replace(tzinfo=datetime.timezone.utc).timestamp() - 5
+    usage = Usage(args.agent, args.token_budget)
+    events = Tail(args.events)
+    rollout = None
+    write(args.usage, usage.record())
+
+    stopped = False
+    while True:
+        changed = False
+        for event in events.lines():
+            if args.agent == "claude":
+                changed |= usage.claude_event(event)
+            else:
+                changed |= usage.codex_stream_event(event)
+        if args.agent == "codex":
+            if rollout is None:
+                path = newest_rollout(started)
+                if path:
+                    rollout = Tail(path)
+            if rollout is not None:
+                for event in rollout.lines():
+                    changed |= usage.codex_rollout_event(event)
+        if changed:
+            write(args.usage, usage.record())
+        if usage.total >= usage.budget and not stopped:
+            stopped = True
+            print(f"token budget reached: {usage.total} >= {usage.budget}", file=sys.stderr)
+            stop(args.pid)
+        if not alive(args.pid):
+            # One last read for what was written on the way out.
+            for event in events.lines():
+                if args.agent == "claude":
+                    usage.claude_event(event)
+                else:
+                    usage.codex_stream_event(event)
+            write(args.usage, usage.record())
+            return 0
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

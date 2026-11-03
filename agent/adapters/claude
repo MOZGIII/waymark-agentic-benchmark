@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+# Claude Code adapter: the prompt on stdin (passed as the argument, the only
+# documented form), the CLI's stream-json events on
+# stdout. Permission prompts are bypassed, which the CLI only allows for a
+# non-root user: the workstation is the sandbox.
+# Transcripts stay under ~/.claude for collection.
+set -euo pipefail
+
+exec claude --print "$(cat)" --output-format stream-json --verbose \
+	--dangerously-skip-permissions --model "$MODEL" --max-turns "$TURN_BUDGET"

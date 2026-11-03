@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+#
+# experiment-launch — start the agent on the workstation of one run.
+#
+# Usage: experiment-launch <run-id>
+#
+# Needs the run prepared and a prompt at runs/<run-id>/prompt.md. Takes the
+# agent and model from the manifest, falling back to BENCH_AGENT and
+# BENCH_MODEL, and the budgets from BENCH_TOKEN_BUDGET, BENCH_TURN_BUDGET and
+# BENCH_WALL_BUDGET; records all of them. Pushes the agent/ bundle, the prompt
+# and the API key to the dev user and starts agent/run-agent as a transient
+# systemd unit whose lifetime is capped at the wall budget. Refuses to start
+# twice: a run gets one session.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-launch <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq tar
+
+dir="$(run_dir "$id")"
+[[ "$(manifest_get "$id" .destroyed_at)" == null ]] || die "run $id was destroyed"
+[[ "$(manifest_get "$id" .prepare.finished_at)" != null ]] || die "run $id is not prepared"
+[[ "$(manifest_get "$id" .launched_at)" == null ]] || die "run $id was already launched"
+[[ -f "$dir/prompt.md" ]] || die "no $dir/prompt.md"
+
+agent="$(manifest_get "$id" .agent)"
+[[ "$agent" != null ]] || agent="${BENCH_AGENT:?set BENCH_AGENT in .env or .agent in the manifest}"
+model="$(manifest_get "$id" .model)"
+[[ "$model" != null ]] || model="${BENCH_MODEL:?set BENCH_MODEL in .env or .model in the manifest}"
+tokens="${BENCH_TOKEN_BUDGET:?set BENCH_TOKEN_BUDGET in .env}"
+turns="${BENCH_TURN_BUDGET:?set BENCH_TURN_BUDGET in .env}"
+wall="${BENCH_WALL_BUDGET:?set BENCH_WALL_BUDGET in .env}"
+
+# Claude Code takes an API key or, for subscription use, the long-lived token
+# from `claude setup-token`; the key wins when both are set.
+case "$agent" in
+claude)
+	if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+		secret="ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+	else
+		secret="CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in .env}"
+	fi
+	;;
+codex) secret="OPENAI_API_KEY=${OPENAI_API_KEY:?set OPENAI_API_KEY in .env}" ;;
+*) die "unknown agent: $agent" ;;
+esac
+
+manifest_set "$id" .agent "\"$agent\""
+manifest_set "$id" .model "\"$model\""
+manifest_set "$id" .budget "{\"tokens\": $tokens, \"turns\": $turns, \"wall_seconds\": $wall}"
+
+bench=/home/dev/bench
+cat >"$dir/run.env" <<ENV
+RUN_ID=$id
+AGENT=$agent
+MODEL=$model
+TOKEN_BUDGET=$tokens
+TURN_BUDGET=$turns
+WORKSPACE=/home/dev/workspace
+ENV
+
+# The bundle: agent/ plus the run's prompt and parameters, owned by dev.
+unpack="rm -rf $bench && install -d -o dev -g dev $bench && tar -x -C $bench && chown -R dev:dev $bench"
+tar -c -C "$PROJECT_ROOT/agent" . -C "$dir" prompt.md run.env | ssh_machine "$id" workstation "$unpack"
+# The key goes separately, never through the tarball or the unit's properties.
+ssh_machine "$id" workstation "install -m 0600 -o dev -g dev /dev/stdin $bench/secrets.env" <<<"$secret"
+
+ssh_machine "$id" workstation "systemctl reset-failed bench-agent 2>/dev/null; systemd-run --unit=bench-agent \
+	--uid=dev --gid=dev --working-directory=$bench -p RuntimeMaxSec=$wall -p KillMode=control-group \
+	--setenv=HOME=/home/dev --setenv=USER=dev --setenv=PATH=/usr/local/bin:/usr/bin:/bin $bench/run-agent"
+
+manifest_set "$id" .launched_at "\"$(now_utc)\""
+log "run $id: launched $agent ($model) with $tokens tokens, $turns turns, ${wall}s"

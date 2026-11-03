@@ -9,3 +9,4 @@
 .terraform/
 /ansible/inventory/
 /ansible/.venv/
+__pycache__/

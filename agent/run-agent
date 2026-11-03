@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+#
+# run-agent — run one agent session on the workstation, under the budget.
+#
+# Started by bin/experiment-launch as a systemd unit in the bundle directory,
+# which holds run.env (agent, model, budgets), secrets.env (the API key),
+# prompt.md, the adapters and the watchdog. Writes everything to out/:
+#   events.jsonl   the agent CLI's own JSON event stream
+#   agent.stderr   whatever the CLI printed to stderr
+#   usage.json     running token totals, kept by the watchdog
+#   exit.json      how the session ended, written last
+set -uo pipefail
+
+here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+out="$here/out"
+mkdir -p "$out"
+
+set -a
+# shellcheck source=/dev/null
+. "$here/run.env"
+# shellcheck source=/dev/null
+. "$here/secrets.env"
+set +a
+
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+agent_pid=""
+watchdog_pid=""
+
+# write_exit <reason> <code>: the exit record. reason is one of
+# finished, failed, token_budget, turn_budget, wall_budget.
+write_exit() {
+	jq -n --arg reason "$1" --argjson code "$2" --arg started "$started_at" \
+		--arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		'{reason: $reason, code: $code, started_at: $started, finished_at: $finished}' >"$out/exit.json"
+}
+
+# systemd's RuntimeMaxSec ends the unit with SIGTERM: record it and stop the agent.
+on_term() {
+	[[ -n "$agent_pid" ]] && kill "$agent_pid" 2>/dev/null
+	[[ -n "$watchdog_pid" ]] && kill "$watchdog_pid" 2>/dev/null
+	write_exit wall_budget 143
+	exit 143
+}
+trap on_term TERM
+
+mkdir -p "$WORKSPACE"
+cd "$WORKSPACE" || {
+	write_exit failed 1
+	exit 1
+}
+
+"$here/adapters/$AGENT" <"$here/prompt.md" >"$out/events.jsonl" 2>"$out/agent.stderr" &
+agent_pid=$!
+
+"$here/watchdog" --agent "$AGENT" --pid "$agent_pid" --events "$out/events.jsonl" \
+	--usage "$out/usage.json" --token-budget "$TOKEN_BUDGET" --started "$started_at" &
+watchdog_pid=$!
+
+wait "$agent_pid"
+code=$?
+agent_pid=""
+# The watchdog exits by itself once it has read what the agent wrote last.
+for _ in $(seq 30); do
+	kill -0 "$watchdog_pid" 2>/dev/null || break
+	sleep 0.5
+done
+kill "$watchdog_pid" 2>/dev/null
+wait "$watchdog_pid" 2>/dev/null
+watchdog_pid=""
+
+over_budget="$(jq -r '.over_budget // false' "$out/usage.json" 2>/dev/null)"
+result_subtype="$(jq -r 'select(.type == "result") | .subtype' "$out/events.jsonl" 2>/dev/null | tail -1)"
+if [[ "$over_budget" == true ]]; then
+	write_exit token_budget "$code"
+elif [[ "$result_subtype" == error_max_turns ]]; then
+	write_exit turn_budget "$code"
+elif [[ "$code" -eq 0 ]]; then
+	write_exit finished 0
+else
+	write_exit failed "$code"
+fi

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Codex adapter: the prompt on stdin, the CLI's JSONL event stream on stdout.
+# Runs without approvals or sandbox: the workstation is the sandbox, and the
+# task needs sudo, Docker and SSH to production. Session rollouts are kept
+# under ~/.codex/sessions for collection and for the watchdog.
+set -euo pipefail
+
+exec codex exec --json --dangerously-bypass-approvals-and-sandbox \
+	--skip-git-repo-check --model "$MODEL" -

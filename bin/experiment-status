@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# experiment-status — show the agent's state and usage so far for one run.
+#
+# Usage: experiment-status <run-id>
+#
+# Reads the systemd unit's state and the watchdog's usage file, and the exit
+# record once the session has ended. Prints JSON; changes nothing.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-status <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+[[ "$(manifest_get "$id" .launched_at)" != null ]] || die "run $id is not launched"
+
+# The remote script is single-quoted on purpose: its variables expand on the workstation.
+# shellcheck disable=SC2016
+ssh_machine "$id" workstation '
+	unit="$(systemctl show bench-agent -p ActiveState -p SubState -p Result -p ExecMainStatus |
+		jq -R -s "split(\"\\n\") | map(select(. != \"\") | capture(\"(?<key>[^=]+)=(?<value>.*)\")) | from_entries")"
+	jq -n --argjson unit "$unit" \
+		--argjson usage "$(cat /home/dev/bench/out/usage.json 2>/dev/null || echo "{}")" \
+		--argjson exit "$(cat /home/dev/bench/out/exit.json 2>/dev/null || echo null)" \
+		"{unit: \$unit, usage: \$usage, exit: \$exit}"
+'

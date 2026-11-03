@@ -123,3 +123,19 @@ ansible_playbook() {
 	ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg" uv run --project "$ANSIBLE_DIR" --frozen \
 		ansible-playbook -i "$inventory" "$ANSIBLE_DIR/playbooks/$playbook.yml" "$@"
 }
+
+# ssh_machine <run-id> <workstation|production> <ssh-args>...: ssh to one of
+# the run's machines as the provisioning user with the host's key, trusting
+# host keys on first contact into the run's own known_hosts file.
+ssh_machine() {
+	local id="$1" role="$2"
+	shift 2
+	require_cmd ssh
+	local key user address
+	key="$(ssh_key_path)"
+	user="$(manifest_get "$id" .machines.ssh_user)"
+	address="$(manifest_get "$id" ".machines.$role.public_ip")"
+	[[ "$address" != null ]] || die "run $id has no $role recorded; run experiment-create"
+	ssh -i "$key" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$(run_dir "$id")/known_hosts" \
+		-o BatchMode=yes "$user@$address" "$@"
+}
