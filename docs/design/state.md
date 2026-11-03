@@ -8,7 +8,7 @@ The project is stateful on the experiments host, in git-ignored locations.
 
 - `manifest.json`: parameters (framework, agent, model, tier, repetition, provider, region, sizes),
   prompt hash, playbook hash, provider image identifier, CLI versions, stage timestamps and exit state
-- `tofu.tfstate` for the experiment root and `snapshot.tfstate` for the snapshot root
+- `experiment.tfstate` and `snapshot.tfstate`, one per tofu stage, plus the per-run variables each was applied with
 - the rendered inventory and the rendered prompt
 - `artifacts/` from the collect stage
 

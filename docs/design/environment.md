@@ -36,6 +36,9 @@ wrong shape for a flow that has an agent session in the middle.
 
 ## Providers
 
-Infrastructure is driven by OpenTofu. Each provider is a module behind one fixed interface (inputs: run
-id, sizes, architecture, region, keys; outputs: addresses and ids of both VMs), selected by a variable.
-Hetzner and Linode are both supported, and the provider is a recorded run parameter.
+Infrastructure is driven by OpenTofu with one root per stage and provider, `tf/<stage>/<provider>`, all
+sharing the same variables (run id, host key, region, image, machine types) and outputs (ids and
+addresses of both machines). The provider is chosen in `.env` and recorded in the run's manifest. One
+root per provider rather than one root selecting a module: a provider block must be configured even
+when its module has a count of zero, so a single root would demand every provider's credentials.
+Hetzner, Linode and Scaleway are supported.

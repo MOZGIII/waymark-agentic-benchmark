@@ -18,7 +18,7 @@ resolve_self() {
 # bin/, lib/ and libexec/ are siblings under the project root.
 PROJECT_ROOT="$(dirname "$(dirname "$(resolve_self "${BASH_SOURCE[0]}")")")"
 RUNS_DIR="$PROJECT_ROOT/runs"
-TF_ROOTS_DIR="$PROJECT_ROOT/tf/roots"
+TF_DIR="$PROJECT_ROOT/tf"
 ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 
 log() { printf '%s\n' "$*" >&2; }
@@ -45,6 +45,15 @@ load_env() {
 	# shellcheck disable=SC1090
 	. "$env_file"
 	set +a
+}
+
+# ssh_key_path: the host's private key for the target VMs, BENCH_SSH_KEY from
+# .env, taken relative to the project root unless absolute. The default lives
+# in the git-ignored .local/ so the benchmark never touches a real ~/.ssh.
+ssh_key_path() {
+	local key="${BENCH_SSH_KEY:?set BENCH_SSH_KEY in .env}"
+	[[ "$key" == /* ]] || key="$PROJECT_ROOT/$key"
+	printf '%s' "$key"
 }
 
 # run_id_check <id>: run ids name directories and cloud resources, so they are
@@ -84,16 +93,21 @@ manifest_set() {
 # now_utc: timestamps in the manifest are RFC 3339 in UTC.
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# tofu_root <root-name> <run-id> <tofu-args>...: run OpenTofu in tf/roots/<root>
-# with the run's own state file, so one root serves every run. The provider
-# and sizes come from the root's git-ignored *.auto.tfvars; per-run values are
-# passed by the caller as -var flags.
+# tofu_root <stage> <provider> <run-id> <subcommand> <tofu-args>...: run OpenTofu
+# in tf/<stage>/<provider> with the run's own state file, so one root serves
+# every run. Provider-level settings come from the root's git-ignored
+# *.auto.tfvars; per-run values are passed by the caller. `init` takes no
+# state file; every other subcommand gets the run's.
 tofu_root() {
-	local root="$1" id="$2"
-	shift 2
+	local stage="$1" provider="$2" id="$3" subcommand="$4"
+	shift 4
 	require_cmd tofu
-	[[ -d "$TF_ROOTS_DIR/$root" ]] || die "no tofu root: $root"
-	tofu -chdir="$TF_ROOTS_DIR/$root" "$@" -state="$(run_dir "$id")/$root.tfstate"
+	local root="$TF_DIR/$stage/$provider"
+	[[ -d "$root" ]] || die "no tofu root for stage '$stage' and provider '$provider'"
+	case "$subcommand" in
+	init) tofu -chdir="$root" init "$@" ;;
+	*) tofu -chdir="$root" "$subcommand" -state="$(run_dir "$id")/$stage.tfstate" "$@" ;;
+	esac
 }
 
 # ansible_playbook <run-id> <playbook-name> <ansible-args>...: run a playbook

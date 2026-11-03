@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# experiment-create — create the workstation and production VMs of one run.
+#
+# Usage: experiment-create <run-id>
+#
+# Applies tf/experiment/<provider> with the run's own state, where <provider>
+# is BENCH_PROVIDER from .env, and records the provider and the machines'
+# addresses in the run's manifest. Generates the host's key (BENCH_SSH_KEY) on
+# first use. Re-running is safe: apply is idempotent. The per-run variables are
+# kept in the run directory so destroy can reuse them.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-create <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq ssh-keygen
+
+provider="${BENCH_PROVIDER:?set BENCH_PROVIDER in .env}"
+key="$(ssh_key_path)"
+if [[ ! -f "$key.pub" ]]; then
+	log "no key at $key; generating one"
+	mkdir -p "${key%/*}"
+	ssh-keygen -q -t ed25519 -N '' -C bench-host -f "$key"
+fi
+
+dir="$(run_dir "$id")"
+manifest="$(manifest_path "$id")"
+if [[ -f "$manifest" && "$(manifest_get "$id" .destroyed_at)" != null ]]; then
+	die "run $id was destroyed at $(manifest_get "$id" .destroyed_at); use a new id"
+fi
+
+vars="$dir/experiment.tfvars.json"
+jq -n --arg run_id "$id" --rawfile key "$key.pub" \
+	'{run_id: $run_id, host_public_key: ($key | rtrimstr("\n"))}' >"$vars"
+
+manifest_set "$id" .run_id "\"$id\""
+manifest_set "$id" .provider "\"$provider\""
+manifest_set "$id" .created_at "\"$(now_utc)\""
+
+tofu_root experiment "$provider" "$id" init -input=false
+tofu_root experiment "$provider" "$id" apply -input=false -auto-approve -var-file="$vars"
+tofu_root experiment "$provider" "$id" output -json >"$dir/experiment.outputs.json"
+
+manifest_set "$id" .machines "$(jq '{
+	ssh_user: .ssh_user.value,
+	workstation: .workstation.value,
+	production: .production.value
+}' "$dir/experiment.outputs.json")"
+
+log "run $id: workstation $(manifest_get "$id" .machines.workstation.public_ip)," \
+	"production $(manifest_get "$id" .machines.production.public_ip)"

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# experiment-destroy — destroy the VMs of one run.
+#
+# Usage: experiment-destroy <run-id>
+#
+# Destroys tf/experiment/<provider> with the run's own state and variables,
+# the provider being the one the manifest recorded at create time, and stamps
+# the manifest. The run directory is kept: it is the record of the run.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-destroy <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+provider="$(manifest_get "$id" .provider)"
+[[ "$provider" != null ]] || die "run $id has no provider recorded; was it created?"
+dir="$(run_dir "$id")"
+vars="$dir/experiment.tfvars.json"
+[[ -f "$vars" ]] || die "no $vars; was run $id created?"
+
+tofu_root experiment "$provider" "$id" destroy -input=false -auto-approve -var-file="$vars"
+manifest_set "$id" .destroyed_at "\"$(now_utc)\""
+log "run $id: destroyed"

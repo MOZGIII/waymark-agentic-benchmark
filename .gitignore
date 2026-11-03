@@ -1,10 +1,10 @@
 # Local state of the experiments host; see docs/design/state.md
 /runs/
+/.local/
 /.env
 *.auto.tfvars
 *.tfstate
 *.tfstate.*
 *.tfplan
 .terraform/
-.terraform.lock.hcl
 /ansible/inventory/

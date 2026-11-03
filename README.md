@@ -6,9 +6,18 @@ recorded, results scored separately. The reasoning behind the setup is in [docs/
 
 This repository is for the machinery only. The code the agents produce and the reports live elsewhere.
 
+## Operating an experiment
+
+Run from a checkout on the experiments host with `.env` filled in from `.env.example`. Each entrypoint
+takes a run id and works only inside `runs/<run-id>/`, so stages can be re-run.
+
+1. `bin/experiment-create <run-id>` - create the workstation and production VMs
+2. `bin/experiment-destroy <run-id>` - destroy them; the run directory stays as the record
+
 ## Layout
 
-- `lib/` shared shell code sourced by the operator entrypoints
+- `bin/` operator entrypoints, `lib/` shared shell code they source
+- `tf/<stage>/<provider>/` one OpenTofu root per stage and provider, all with the same variables and outputs
 - `scripts/` development and CI checks, not part of operating an experiment
 - `docs/design/` the premises of the design
 - `runs/` per-run state, git-ignored
