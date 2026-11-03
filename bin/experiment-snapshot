@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# experiment-snapshot — snapshot both machines of one run for the scorer.
+#
+# Usage: experiment-snapshot <run-id>
+#
+# Powers both machines off first so the disks are consistent, then applies
+# tf/snapshot/<provider> with its own state in the run directory, separate from
+# the experiment state so experiment-destroy leaves the snapshots alone.
+# Records the snapshot ids in the manifest. Run after experiment-collect: the
+# machines stay off afterwards.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-snapshot <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+dir="$(run_dir "$id")"
+[[ "$(manifest_get "$id" .destroyed_at)" == null ]] || die "run $id was destroyed"
+provider="$(manifest_get "$id" .provider)"
+[[ "$provider" != null ]] || die "run $id has no provider recorded; was it created?"
+[[ "$(manifest_get "$id" .collect.finished_at)" != null ]] || die "run $id is not collected"
+
+# poweroff <machine>: ask for a clean shutdown and wait for SSH to go away.
+poweroff() {
+	local machine="$1"
+	ssh_machine "$id" "$machine" "sync && systemctl poweroff" 2>/dev/null || true
+	for _ in $(seq 60); do
+		ssh_machine "$id" "$machine" -o ConnectTimeout=5 true 2>/dev/null || return 0
+		sleep 2
+	done
+	die "run $id: $machine still accepts connections after power-off"
+}
+
+manifest_set "$id" .snapshot.started_at "\"$(now_utc)\""
+for machine in workstation production; do
+	log "run $id: powering off $machine"
+	poweroff "$machine"
+done
+
+vars="$dir/snapshot.tfvars.json"
+jq -n --arg run_id "$id" \
+	--arg workstation "$(manifest_get "$id" .machines.workstation.id)" \
+	--arg production "$(manifest_get "$id" .machines.production.id)" \
+	'{run_id: $run_id, workstation_id: $workstation, production_id: $production}' >"$vars"
+
+tofu_root snapshot "$provider" "$id" init -input=false
+tofu_root snapshot "$provider" "$id" apply -input=false -auto-approve -var-file="$vars"
+tofu_root snapshot "$provider" "$id" output -json >"$dir/snapshot.outputs.json"
+
+manifest_set "$id" .snapshot.workstation "$(jq .workstation_snapshot_id.value "$dir/snapshot.outputs.json")"
+manifest_set "$id" .snapshot.production "$(jq .production_snapshot_id.value "$dir/snapshot.outputs.json")"
+manifest_set "$id" .snapshot.finished_at "\"$(now_utc)\""
+log "run $id: snapshots $(manifest_get "$id" .snapshot.workstation) and $(manifest_get "$id" .snapshot.production)"

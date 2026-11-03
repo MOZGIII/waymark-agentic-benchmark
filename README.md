@@ -16,7 +16,8 @@ takes a run id and works only inside `runs/<run-id>/`, so stages can be re-run.
 3. `bin/experiment-launch <run-id>` - start the agent on the workstation with the prompt in `runs/<run-id>/prompt.md`
 4. `bin/experiment-status <run-id>` - show the agent's state, usage so far, and how it ended
 5. `bin/experiment-collect <run-id>` - pull the session, workspace, Docker state and logs from both machines
-6. `bin/experiment-destroy <run-id>` - destroy the VMs; the run directory stays as the record
+6. `bin/experiment-snapshot <run-id>` - power both machines off and snapshot them for the scorer
+7. `bin/experiment-destroy <run-id>` - destroy the VMs; the run directory stays as the record
 
 The host needs `tofu`, `uv` (which provides Ansible from the lock in `ansible/`), `jq`, `git` and `ssh-keygen`.
 

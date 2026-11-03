@@ -31,9 +31,10 @@ record what they held, and they would dominate the archive without adding inform
 
 ## Snapshots
 
-Both VMs are snapshotted after collection and before destruction. The scorer can then boot the exact
-machines the agent left behind and run acceptance tests against the deployed app, instead of trying to
-rebuild that state from files and re-running the agent's deployment steps. Retention is decided once the
+Both VMs are powered off and snapshotted after collection and before destruction, so the disks are
+consistent. The scorer can then boot the exact machines the agent left behind and run acceptance tests
+against the deployed app, instead of trying to rebuild that state from files and re-running the agent's
+deployment steps. Retention is decided once the
 scorer exists; snapshots are the faithful option, files are the cheap one.
 
 ## Web traffic
