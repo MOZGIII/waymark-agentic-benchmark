@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# Format-check and validate every OpenTofu root under tf/<stage>/<provider>.
+# Validation needs the providers, so each root is initialised without a
+# backend first: that downloads providers and involves no credentials. The
+# committed lock file is read-only here, so a missing or stale lock fails
+# instead of being re-resolved; scripts/tofu-lock refreshes it.
+#
+# Usage: scripts/tofu-check
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+[[ -d tf ]] || exit 0
+
+tofu fmt -check -recursive -diff tf
+
+for root in tf/*/*/; do
+	[[ -f "$root/versions.tf" ]] || continue
+	echo "== $root"
+	tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly >/dev/null
+	tofu -chdir="$root" validate
+done

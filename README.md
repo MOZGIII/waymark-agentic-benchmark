@@ -9,5 +9,6 @@ This repository is for the machinery only. The code the agents produce and the r
 ## Layout
 
 - `lib/` shared shell code sourced by the operator entrypoints
+- `scripts/` development and CI checks, not part of operating an experiment
 - `docs/design/` the premises of the design
 - `runs/` per-run state, git-ignored

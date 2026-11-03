@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Run shellcheck over every shell file in the repository, tracked or not yet
+# tracked but not ignored: files named *.sh, plus files whose first line is a
+# sh or bash shebang, which is how the extensionless entrypoints in bin/ and
+# libexec/ are found. Options come from .shellcheckrc at the repository root.
+#
+# Usage: scripts/shellcheck [extra shellcheck args]
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+files() { git ls-files -z --cached --others --exclude-standard "$@"; }
+
+{
+	files -- '*.sh'
+	files | xargs -0 grep -lZ -m1 -E '^#! ?(/usr/bin/env +)?(/bin/|/usr/bin/)?(ba)?sh\b' || true
+} | sort -zu | xargs -0 -r shellcheck "$@"

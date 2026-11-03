@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Syntax-check every playbook under ansible/playbooks and lint the ansible
+# tree, with the toolchain pinned in ansible/uv.lock.
+#
+# Usage: scripts/ansible-check
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+[[ -d ansible ]] || exit 0
+
+export ANSIBLE_CONFIG=ansible/ansible.cfg
+for playbook in ansible/playbooks/*.yml; do
+	uv run --project ansible --frozen ansible-playbook --syntax-check -i localhost, "$playbook"
+done
+uv run --project ansible --frozen ansible-lint ansible

@@ -1,0 +1,6 @@
+# Files without a shebang (sourced libraries) are bash.
+shell=bash
+# Follow `source`/`.` into other files, resolving `# shellcheck source=` paths
+# relative to the script's own directory.
+external-sources=true
+source-path=SCRIPTDIR

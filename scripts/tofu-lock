@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Write the provider lock file of every OpenTofu root under tf/, with hashes
+# for every platform the roots are applied or checked on: the experiments host
+# and CI (linux amd64) and developer machines (linux and macOS arm64). Run it
+# whenever a provider constraint changes, and commit the lock files. An
+# existing lock keeps its provider versions; to move a provider to a new major
+# version, delete that root's .terraform.lock.hcl first and rerun.
+#
+# Usage: scripts/tofu-lock
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+platforms=(linux_amd64 linux_arm64 darwin_arm64)
+args=()
+for platform in "${platforms[@]}"; do
+	args+=("-platform=$platform")
+done
+
+for root in tf/*/*/; do
+	[[ -f "$root/versions.tf" ]] || continue
+	echo "== $root"
+	tofu -chdir="$root" providers lock "${args[@]}"
+done
