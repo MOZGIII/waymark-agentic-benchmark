@@ -1,0 +1,26 @@
+- name: List installed Debian packages
+  ansible.builtin.shell: dpkg-query -W -f '${Package}\t${Version}\n' > /tmp/packages.tsv
+  changed_when: false
+
+- name: Fetch the Debian package list
+  ansible.builtin.fetch:
+    src: /tmp/packages.tsv
+    dest: "{{ package_dump_dir }}/packages-{{ inventory_hostname }}-{{ package_dump_label }}.tsv"
+    flat: true
+
+- name: Check for npm
+  ansible.builtin.stat:
+    path: /usr/local/bin/npm
+  register: package_dump_npm
+
+- name: List global npm packages
+  ansible.builtin.shell: /usr/local/bin/npm ls --global --depth=0 --json > /tmp/npm-global.json
+  changed_when: false
+  when: package_dump_npm.stat.exists
+
+- name: Fetch the npm package list
+  ansible.builtin.fetch:
+    src: /tmp/npm-global.json
+    dest: "{{ package_dump_dir }}/npm-{{ inventory_hostname }}-{{ package_dump_label }}.json"
+    flat: true
+  when: package_dump_npm.stat.exists

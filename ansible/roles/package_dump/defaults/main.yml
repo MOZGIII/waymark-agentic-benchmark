@@ -1,0 +1,4 @@
+# Records what is installed, for the run's manifest. Required: package_dump_dir
+# (a controller directory), package_dump_label (which stage took the dump).
+package_dump_dir: ""
+package_dump_label: ""

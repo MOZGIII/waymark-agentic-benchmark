@@ -18,6 +18,10 @@ Each experiment gets two fresh VMs, created right before the run and destroyed a
 - **production**: simulates the deployment server. Stock Debian with Docker preinstalled and nothing
   else. Whatever the framework needs there, the agent installs over SSH.
 
+On both, the agent works as an unprivileged user with passwordless sudo and Docker access: `dev` on the
+workstation, `deploy` on production, which the workstation's SSH config names `prod`. The prompt refers
+to that name, so no framework pays for discovering the topology.
+
 Both are the same CPU architecture (x86_64) so image builds on the workstation run unchanged on
 production, and the same size (about 4 cores and 8 GB) so no framework's server component is starved.
 They share a private network; only outbound internet and SSH from the host are otherwise reachable.

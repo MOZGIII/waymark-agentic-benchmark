@@ -1,0 +1,10 @@
+# The Ansible toolchain the experiments host runs the playbooks with, pinned
+# through uv.lock. Only ansible-core: the roles use builtin modules alone.
+[project]
+name = "benchmark-ansible"
+version = "0"
+requires-python = ">=3.13"
+dependencies = ["ansible-core==2.22.0"]
+
+[dependency-groups]
+dev = ["ansible-lint==26.10.1"]

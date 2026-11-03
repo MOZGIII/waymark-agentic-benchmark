@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# render-inventory — print the Ansible inventory of one run, from its manifest.
+#
+# Usage: render-inventory <run-id>
+#
+# Both machines are addressed by public IP as root with the host's key. Host
+# keys are accepted on first contact into the run's own known_hosts file, so a
+# reused address from an earlier run can never collide.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: render-inventory <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+key="$(ssh_key_path)"
+dir="$(run_dir "$id")"
+machines="$(manifest_get "$id" .machines)"
+[[ "$machines" != null ]] || die "run $id has no machines recorded; run experiment-create"
+
+field() { jq -r "$1" <<<"$machines"; }
+
+cat <<INI
+[workstation]
+workstation ansible_host=$(field .workstation.public_ip) private_ip=$(field .workstation.private_ip)
+
+[production]
+production ansible_host=$(field .production.public_ip) private_ip=$(field .production.private_ip)
+
+[all:vars]
+run_id=$id
+ansible_user=$(field .ssh_user)
+ansible_ssh_private_key_file=$key
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$dir/known_hosts'
+INI

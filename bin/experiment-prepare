@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# experiment-prepare — install pinned tooling on the VMs of one run.
+#
+# Usage: experiment-prepare <run-id>
+#
+# Renders the run's inventory from its manifest, generates the key with which
+# the workstation reaches production, runs the production and workstation
+# playbooks, and records the playbook hash and the resulting package lists.
+# Re-running is safe: the playbooks are idempotent.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-prepare <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq ssh-keygen git
+
+dir="$(run_dir "$id")"
+[[ "$(manifest_get "$id" .destroyed_at)" == null ]] || die "run $id was destroyed"
+
+mkdir -p "$ANSIBLE_DIR/inventory"
+"$PROJECT_ROOT/libexec/render-inventory" "$id" >"$ANSIBLE_DIR/inventory/$id.ini"
+
+bridge="$dir/bridge_key"
+[[ -f "$bridge" ]] || ssh-keygen -q -t ed25519 -N '' -C "$id-bridge" -f "$bridge"
+
+# The playbooks are identified by the tracked content under ansible/, flagged
+# when the working tree differs from it.
+playbooks_hash="$(git -C "$PROJECT_ROOT" ls-files -s -- ansible | sha256sum | cut -c1-64)"
+git -C "$PROJECT_ROOT" diff --quiet -- ansible || playbooks_hash="$playbooks_hash-dirty"
+
+vars="$dir/prepare.vars.json"
+host_key="$(jq -r .host_public_key "$dir/experiment.tfvars.json")"
+jq -n --arg dir "$dir" --arg bridge "$bridge" --arg host_key "$host_key" \
+	--rawfile bridge_key "$bridge.pub" '{
+		run_dir: $dir,
+		bridge_private_key_file: $bridge,
+		bridge_public_key: ($bridge_key | rtrimstr("\n")),
+		host_public_key: $host_key
+	}' >"$vars"
+
+manifest_set "$id" .prepare.playbooks_hash "\"$playbooks_hash\""
+manifest_set "$id" .prepare.started_at "\"$(now_utc)\""
+
+ansible_playbook "$id" production -e "@$vars"
+ansible_playbook "$id" workstation -e "@$vars"
+
+manifest_set "$id" .prepare.finished_at "\"$(now_utc)\""
+log "run $id: prepared"

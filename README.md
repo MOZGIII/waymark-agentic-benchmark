@@ -12,11 +12,15 @@ Run from a checkout on the experiments host with `.env` filled in from `.env.exa
 takes a run id and works only inside `runs/<run-id>/`, so stages can be re-run.
 
 1. `bin/experiment-create <run-id>` - create the workstation and production VMs
-2. `bin/experiment-destroy <run-id>` - destroy them; the run directory stays as the record
+2. `bin/experiment-prepare <run-id>` - install pinned tooling on both; the workstation reaches production as `prod`
+3. `bin/experiment-destroy <run-id>` - destroy them; the run directory stays as the record
+
+The host needs `tofu`, `uv` (which provides Ansible from the lock in `ansible/`), `jq`, `git` and `ssh-keygen`.
 
 ## Layout
 
-- `bin/` operator entrypoints, `lib/` shared shell code they source
+- `bin/` operator entrypoints, `lib/` shared shell code they source, `libexec/` helpers they call
+- `ansible/` the playbooks and roles that prepare the VMs, with the rendered inventories git-ignored
 - `tf/<stage>/<provider>/` one OpenTofu root per stage and provider, all with the same variables and outputs
 - `scripts/` development and CI checks, not part of operating an experiment
 - `docs/design/` the premises of the design

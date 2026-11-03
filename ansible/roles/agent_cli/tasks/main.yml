@@ -1,0 +1,24 @@
+- name: Download Node {{ agent_cli_node_version }}
+  ansible.builtin.get_url:
+    url: "https://nodejs.org/dist/v{{ agent_cli_node_version }}/node-v{{ agent_cli_node_version }}-linux-x64.tar.xz"
+    dest: "/tmp/node-v{{ agent_cli_node_version }}.tar.xz"
+    checksum: "sha256:https://nodejs.org/dist/v{{ agent_cli_node_version }}/SHASUMS256.txt"
+    mode: "0644"
+
+- name: Install Node under /usr/local
+  ansible.builtin.unarchive:
+    src: "/tmp/node-v{{ agent_cli_node_version }}.tar.xz"
+    dest: /usr/local
+    remote_src: true
+    extra_opts: ["--strip-components=1"]
+    creates: /usr/local/bin/node
+
+- name: Install the agent CLIs
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/npm
+      - install
+      - --global
+      - "@anthropic-ai/claude-code@{{ agent_cli_claude_code_version }}"
+      - "@openai/codex@{{ agent_cli_codex_version }}"
+    creates: /usr/local/lib/node_modules/@openai/codex

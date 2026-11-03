@@ -1,0 +1,18 @@
+# The production machine: Docker and a deploy user reachable from the
+# workstation. Nothing framework-specific; the agent installs the rest.
+- name: Prepare the production machine
+  hosts: production
+  become: true
+  roles:
+    - base
+    - docker
+    - role: login_user
+      vars:
+        login_user_name: deploy
+        login_user_authorized_keys:
+          - "{{ host_public_key }}"
+          - "{{ bridge_public_key }}"
+    - role: package_dump
+      vars:
+        package_dump_dir: "{{ run_dir }}"
+        package_dump_label: prepare

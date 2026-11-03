@@ -1,0 +1,6 @@
+# Node from the official tarball, verified against the release's checksum
+# file; the agent CLIs from npm at exact versions. Bump deliberately: the
+# versions are recorded in every run's manifest.
+agent_cli_node_version: "26.13.0"
+agent_cli_claude_code_version: "2.1.317"
+agent_cli_codex_version: "0.166.0"

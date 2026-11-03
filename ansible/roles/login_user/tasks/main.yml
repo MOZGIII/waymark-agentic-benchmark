@@ -1,0 +1,34 @@
+- name: Create {{ login_user_name }}
+  ansible.builtin.user:
+    name: "{{ login_user_name }}"
+    shell: /bin/bash
+    groups:
+      - sudo
+      - docker
+    append: true
+    create_home: true
+
+- name: Grant passwordless sudo to {{ login_user_name }}
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ login_user_name }}"
+    content: "{{ login_user_name }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Create the SSH directory of {{ login_user_name }}
+  ansible.builtin.file:
+    path: "/home/{{ login_user_name }}/.ssh"
+    state: directory
+    owner: "{{ login_user_name }}"
+    group: "{{ login_user_name }}"
+    mode: "0700"
+
+- name: Authorize keys for {{ login_user_name }}
+  ansible.builtin.lineinfile:
+    path: "/home/{{ login_user_name }}/.ssh/authorized_keys"
+    line: "{{ item }}"
+    create: true
+    owner: "{{ login_user_name }}"
+    group: "{{ login_user_name }}"
+    mode: "0600"
+  loop: "{{ login_user_authorized_keys }}"

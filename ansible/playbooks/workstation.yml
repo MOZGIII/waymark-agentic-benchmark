@@ -1,0 +1,24 @@
+# The developer workstation: Docker, the pinned agent CLIs, and a dev user
+# that reaches production as `prod`.
+- name: Prepare the workstation
+  hosts: workstation
+  become: true
+  roles:
+    - base
+    - docker
+    - role: login_user
+      vars:
+        login_user_name: dev
+        login_user_authorized_keys:
+          - "{{ host_public_key }}"
+    - agent_cli
+    - role: prod_access
+      vars:
+        prod_access_user: dev
+        prod_access_prod_user: deploy
+        prod_access_prod_host: "{{ hostvars['production'].private_ip }}"
+        prod_access_key_file: "{{ bridge_private_key_file }}"
+    - role: package_dump
+      vars:
+        package_dump_dir: "{{ run_dir }}"
+        package_dump_label: prepare

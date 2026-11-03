@@ -1,0 +1,6 @@
+# Docker CE from Docker's own apt repository, pinned to exact package versions
+# for Debian 13 on amd64. Bump all four together.
+docker_version: "5:29.9.2-1~debian.13~trixie"
+docker_containerd_version: "2.4.2-3~debian.13~trixie"
+docker_compose_version: "5.7.0-1~debian.13~trixie"
+docker_buildx_version: "0.38.1-1~debian.13~trixie"

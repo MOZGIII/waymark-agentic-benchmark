@@ -1,0 +1,9 @@
+# What a stock Debian is given before anything else; kept to tools the agent
+# would find on any developer machine or server.
+base_packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - sudo
+  - unzip

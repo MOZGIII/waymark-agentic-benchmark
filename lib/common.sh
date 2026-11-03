@@ -111,12 +111,15 @@ tofu_root() {
 }
 
 # ansible_playbook <run-id> <playbook-name> <ansible-args>...: run a playbook
-# from ansible/playbooks against the run's rendered inventory.
+# from ansible/playbooks against the run's rendered inventory, with the
+# repository's ansible.cfg regardless of the working directory. Ansible itself
+# comes from the uv project in ansible/, pinned by its lock file.
 ansible_playbook() {
 	local id="$1" playbook="$2"
 	shift 2
-	require_cmd ansible-playbook
+	require_cmd uv
 	local inventory="$ANSIBLE_DIR/inventory/$id.ini"
 	[[ -f "$inventory" ]] || die "no inventory for run $id; run experiment-prepare"
-	ansible-playbook -i "$inventory" "$ANSIBLE_DIR/playbooks/$playbook.yml" "$@"
+	ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg" uv run --project "$ANSIBLE_DIR" --frozen \
+		ansible-playbook -i "$inventory" "$ANSIBLE_DIR/playbooks/$playbook.yml" "$@"
 }

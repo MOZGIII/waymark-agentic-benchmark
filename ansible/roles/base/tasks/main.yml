@@ -1,0 +1,9 @@
+- name: Wait for the machine to accept SSH
+  ansible.builtin.wait_for_connection:
+    timeout: 300
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true

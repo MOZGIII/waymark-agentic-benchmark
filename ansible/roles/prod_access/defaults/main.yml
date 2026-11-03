@@ -1,0 +1,6 @@
+# Lets prod_access_user on the workstation reach production as `prod`.
+# Required: all four; prod_access_key_file is a controller path.
+prod_access_user: ""
+prod_access_prod_user: ""
+prod_access_prod_host: ""
+prod_access_key_file: ""

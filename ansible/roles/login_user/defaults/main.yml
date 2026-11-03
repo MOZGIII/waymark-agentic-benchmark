@@ -1,0 +1,3 @@
+# A login user with passwordless sudo and Docker access. Required: login_user_name.
+login_user_name: ""
+login_user_authorized_keys: []
