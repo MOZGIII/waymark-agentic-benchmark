@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+# experiment-collect — pull the artifacts of one run from both machines.
+#
+# Usage: experiment-collect <run-id>
+#
+# Refuses while the agent unit is still active. Writes under
+# runs/<run-id>/artifacts/<machine>/ and copies the exit record and final
+# usage into the manifest. Re-running overwrites; nothing on the machines is
+# changed. Dependency directories (node_modules, .venv, caches) are left out
+# of the tarballs: lockfiles record them, and they can be gigabytes.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: experiment-collect <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+dir="$(run_dir "$id")"
+[[ "$(manifest_get "$id" .destroyed_at)" == null ]] || die "run $id was destroyed"
+[[ "$(manifest_get "$id" .launched_at)" != null ]] || die "run $id is not launched"
+
+state="$(ssh_machine "$id" workstation "systemctl show bench-agent -p ActiveState --value")"
+[[ "$state" != active && "$state" != activating ]] || die "run $id: the agent is still running ($state)"
+
+exclude=(--exclude=node_modules --exclude=.venv --exclude=venv --exclude=__pycache__ --exclude=.cache)
+tar_opts="--ignore-failed-read ${exclude[*]}"
+
+# pull <machine> <file> <remote command>: run the command on the machine as
+# root and store its stdout as artifacts/<machine>/<file>.
+pull() {
+	local machine="$1" file="$2" command="$3"
+	local target="$dir/artifacts/$machine/$file"
+	mkdir -p "${target%/*}"
+	log "  $machine: $file"
+	ssh_machine "$id" "$machine" "$command" >"$target"
+}
+
+manifest_set "$id" .collect.started_at "\"$(now_utc)\""
+
+log "run $id: collecting from the workstation"
+pull workstation session/events.jsonl "cat /home/dev/bench/out/events.jsonl"
+pull workstation session/agent.stderr "cat /home/dev/bench/out/agent.stderr"
+pull workstation session/usage.json "cat /home/dev/bench/out/usage.json"
+pull workstation session/exit.json "cat /home/dev/bench/out/exit.json"
+pull workstation session/bench-agent.journal "journalctl -u bench-agent --no-pager -o short-iso"
+pull workstation session/prompt.md "cat /home/dev/bench/prompt.md"
+pull workstation agent-home.tar.gz "cd /home/dev && tar -cz $tar_opts .claude .codex 2>/dev/null || true"
+pull workstation workspace.tar.gz "cd /home/dev && tar -cz $tar_opts workspace"
+pull workstation docker-images.jsonl "docker image ls --format json"
+pull workstation docker-containers.jsonl "docker ps -a --format json"
+pull workstation system.journal "journalctl -b --no-pager -o short-iso"
+pull workstation packages.tsv "dpkg-query -W -f '\${Package}\t\${Version}\n'"
+
+log "run $id: collecting from production"
+pull production docker-images.jsonl "docker image ls --format json"
+pull production docker-containers.jsonl "docker ps -a --format json"
+pull production docker-inspect.json "docker inspect \$(docker ps -aq) 2>/dev/null || echo '[]'"
+# Single-quoted on purpose: it expands on production.
+# shellcheck disable=SC2016
+logs='d=$(mktemp -d); for c in $(docker ps -a --format "{{.Names}}"); do docker logs "$c" >"$d/$c.log" 2>&1; done'
+pull production docker-logs.tar.gz "$logs; tar -cz -C \"\$d\" . && rm -rf \"\$d\""
+pull production deploy-home.tar.gz "tar -cz $tar_opts -C / home/deploy opt srv 2>/dev/null || true"
+pull production system.journal "journalctl -b --no-pager -o short-iso"
+pull production packages.tsv "dpkg-query -W -f '\${Package}\t\${Version}\n'"
+
+manifest_set "$id" .result "$(jq -n \
+	--argjson exit "$(cat "$dir/artifacts/workstation/session/exit.json" 2>/dev/null || echo null)" \
+	--argjson usage "$(cat "$dir/artifacts/workstation/session/usage.json" 2>/dev/null || echo null)" \
+	'{exit: $exit, usage: $usage}')"
+manifest_set "$id" .collect.finished_at "\"$(now_utc)\""
+log "run $id: collected into $dir/artifacts"

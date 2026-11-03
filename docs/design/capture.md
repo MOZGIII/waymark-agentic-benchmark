@@ -14,15 +14,20 @@ is the primary artifact.
 
 ## From the workstation
 
-- the agent's workspace as a tarball, including lockfiles and any Dockerfiles
-- the Docker state: image list, build logs if kept
-- a package dump taken after preparation and again at collection
+- the agent's workspace as a tarball, including lockfiles, any Dockerfiles and its git history
+- the agent CLI's home directories, where Claude Code and Codex keep their own session transcripts
+- the Docker state: image and container lists
+- the system journal and a package dump, the latter also taken after preparation
+
+Dependency directories (node_modules, virtualenvs, caches) are left out of every tarball. Lockfiles
+record what they held, and they would dominate the archive without adding information.
 
 ## From production
 
-- the container list, images, compose files and other deployment files as the agent left them
-- container logs
-- the same package dumps
+- the container list, images, and the full inspection of every container as the agent left them
+- the logs of every container
+- the deploy user's home and the usual deployment locations, where compose files and configs end up
+- the system journal and the same package dumps
 
 ## Snapshots
 
