@@ -18,3 +18,7 @@ One line each, dated, with the reason. Newest last.
 - 2026-11-03 Scoring is a separate, independent, comparative process; design deferred.
 - 2026-11-03 Bash for orchestration; other languages allowed in bin where bash is a poor fit.
 - 2026-11-04 One tofu root per stage and provider, not one root picking a module: idle providers still want tokens.
+- 2026-11-04 Task: user registration fanning out to auth, avatar, profile and email; see task.md.
+- 2026-11-04 Third-party services are off-the-shelf at pinned tags, never agent-written: equal for all.
+- 2026-11-04 Agent-written services get a fixed HTTP API in the prompt: the scorer must not adapt per run.
+- 2026-11-04 Garage over MinIO for avatars: MinIO stopped releasing in 2025.
