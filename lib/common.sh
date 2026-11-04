@@ -93,20 +93,22 @@ manifest_set() {
 # now_utc: timestamps in the manifest are RFC 3339 in UTC.
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# tofu_root <stage> <provider> <run-id> <subcommand> <tofu-args>...: run OpenTofu
-# in tf/<stage>/<provider> with the run's own state file, so one root serves
-# every run. Provider-level settings come from the root's git-ignored
-# *.auto.tfvars; per-run values are passed by the caller. `init` takes no
-# state file; every other subcommand gets the run's.
+# tofu_root <stage> <provider> <run-id> <state> <subcommand> <tofu-args>...: run
+# OpenTofu in tf/<stage>/<provider> against runs/<run-id>/<state>.tfstate, so
+# one root serves every run, and one run can apply a root twice under two
+# states, as score-restore does with the experiment root. Provider-level
+# settings come from the root's git-ignored *.auto.tfvars; per-run values are
+# passed by the caller. `init` takes no state file; every other subcommand
+# gets the named one.
 tofu_root() {
-	local stage="$1" provider="$2" id="$3" subcommand="$4"
-	shift 4
+	local stage="$1" provider="$2" id="$3" state="$4" subcommand="$5"
+	shift 5
 	require_cmd tofu
 	local root="$TF_DIR/$stage/$provider"
 	[[ -d "$root" ]] || die "no tofu root for stage '$stage' and provider '$provider'"
 	case "$subcommand" in
 	init) tofu -chdir="$root" init "$@" ;;
-	*) tofu -chdir="$root" "$subcommand" -state="$(run_dir "$id")/$stage.tfstate" "$@" ;;
+	*) tofu -chdir="$root" "$subcommand" -state="$(run_dir "$id")/$state.tfstate" "$@" ;;
 	esac
 }
 

@@ -49,9 +49,9 @@ jq -n --arg run_id "$id" \
 	--arg production "$(manifest_get "$id" .machines.production.id)" \
 	'{run_id: $run_id, workstation_id: $workstation, production_id: $production}' >"$vars"
 
-tofu_root snapshot "$provider" "$id" init -input=false
-tofu_root snapshot "$provider" "$id" apply -input=false -auto-approve -var-file="$vars"
-tofu_root snapshot "$provider" "$id" output -json >"$dir/snapshot.outputs.json"
+tofu_root snapshot "$provider" "$id" snapshot init -input=false
+tofu_root snapshot "$provider" "$id" snapshot apply -input=false -auto-approve -var-file="$vars"
+tofu_root snapshot "$provider" "$id" snapshot output -json >"$dir/snapshot.outputs.json"
 
 manifest_set "$id" .snapshot.workstation "$(jq .workstation_snapshot_id.value "$dir/snapshot.outputs.json")"
 manifest_set "$id" .snapshot.production "$(jq .production_snapshot_id.value "$dir/snapshot.outputs.json")"

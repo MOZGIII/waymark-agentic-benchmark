@@ -24,6 +24,6 @@ dir="$(run_dir "$id")"
 vars="$dir/experiment.tfvars.json"
 [[ -f "$vars" ]] || die "no $vars; was run $id created?"
 
-tofu_root experiment "$provider" "$id" destroy -input=false -auto-approve -var-file="$vars"
+tofu_root experiment "$provider" "$id" experiment destroy -input=false -auto-approve -var-file="$vars"
 manifest_set "$id" .destroyed_at "\"$(now_utc)\""
 log "run $id: destroyed"

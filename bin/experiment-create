@@ -42,9 +42,9 @@ manifest_set "$id" .run_id "\"$id\""
 manifest_set "$id" .provider "\"$provider\""
 manifest_set "$id" .created_at "\"$(now_utc)\""
 
-tofu_root experiment "$provider" "$id" init -input=false
-tofu_root experiment "$provider" "$id" apply -input=false -auto-approve -var-file="$vars"
-tofu_root experiment "$provider" "$id" output -json >"$dir/experiment.outputs.json"
+tofu_root experiment "$provider" "$id" experiment init -input=false
+tofu_root experiment "$provider" "$id" experiment apply -input=false -auto-approve -var-file="$vars"
+tofu_root experiment "$provider" "$id" experiment output -json >"$dir/experiment.outputs.json"
 
 manifest_set "$id" .machines "$(jq '{
 	ssh_user: .ssh_user.value,
