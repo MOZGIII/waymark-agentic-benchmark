@@ -24,11 +24,18 @@ takes a run id and works only inside `runs/<run-id>/`, so stages can be re-run.
 `bin/experiment-run <run-id>` chains steps 2 to 8, waiting for the agent in between. A failed stage stops
 it with the run directory intact, and the remaining stages can be run by hand.
 
+## Scoring a run
+
+Separate from running, over any collected runs; see [docs/design/scoring.md](docs/design/scoring.md).
+
+1. `bin/score-usage <run-id>...` - tokens, cost, wall time, responses and tool calls from the run's own records
+
 The host needs `tofu`, `uv` (which provides Ansible from the lock in `ansible/`), `jq`, `git` and `ssh-keygen`.
 
 ## Layout
 
-- `bin/` operator entrypoints, `lib/` shared shell code they source, `libexec/` helpers they call
+- `bin/` operator entrypoints, `lib/` shared shell code they source, `libexec/` helpers they call, `share/` data
+  files they read
 - `ansible/` the playbooks and roles that prepare the VMs, with the rendered inventories git-ignored
 - `agent/` what runs on the workstation: the session wrapper, the token watchdog, one adapter per agent CLI
 - `prompts/` the frozen task and the tier addenda, `frameworks/` one file per framework with its name and docs root

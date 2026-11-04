@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# score-usage — the usage layer of the score, from a run's own records.
+#
+# Usage: score-usage <run-id>...
+#
+# Reads the manifest and the collected event stream, needs no machine, and
+# writes runs/<run-id>/score/usage.json: tokens by kind, the CLI's cost
+# estimate, wall time from launch to exit, responses, tool calls by tool, and
+# how the session ended. Tokens come from the CLI's final result when there is
+# one, else from the watchdog's running total, and the record says which.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -ge 1 ]] || die "usage: score-usage <run-id>..."
+require_cmd jq
+
+for id in "$@"; do
+	run_id_check "$id"
+	dir="$(run_dir "$id")"
+	events="$dir/artifacts/workstation/session/events.jsonl"
+	[[ -f "$events" ]] || die "run $id has no event stream; run experiment-collect"
+	agent="$(manifest_get "$id" .agent)"
+	[[ -f "$PROJECT_ROOT/share/usage-$agent.jq" ]] || die "run $id: no usage reader for agent $agent"
+
+	mkdir -p "$dir/score"
+	summary="$(jq -s -f "$PROJECT_ROOT/share/usage-$agent.jq" "$events")"
+	jq -n --slurpfile manifest "$(manifest_path "$id")" --argjson e "$summary" '
+		$manifest[0] as $m |
+		($m.result.exit // {}) as $exit |
+		{
+			run_id: $m.run_id, framework: $m.framework, agent: $m.agent, model: $m.model,
+			tier: $m.tier, repetition: $m.repetition, provider: $m.provider,
+			prompt_sha256: $m.prompt.rendered_sha256,
+			exit_reason: $exit.reason,
+			result_subtype: $e.result.subtype,
+			wall_seconds: (
+				if $exit.started_at and $exit.finished_at
+				then (($exit.finished_at | fromdateiso8601) - ($exit.started_at | fromdateiso8601))
+				else null end),
+			tokens: (
+				if $e.result.tokens then $e.result.tokens
+				else {input: $m.result.usage.input, output: $m.result.usage.output,
+				      cache_read: $m.result.usage.cache_read, cache_creation: $m.result.usage.cache_creation} end
+				| . + {total: (.input + .output + .cache_read + .cache_creation)}),
+			tokens_source: (if $e.result.tokens then "result" else "watchdog" end),
+			cost_usd: $e.result.cost_usd,
+			turns: $e.result.turns,
+			responses: $e.responses,
+			tool_calls: $e.tool_calls,
+			tools: $e.tools,
+			budget: $m.budget
+		}' >"$dir/score/usage.json"
+	jq -r '"\(.run_id): \(.exit_reason) after \(.wall_seconds)s, \(.tokens.total) tokens (\(.tokens_source)), " +
+		"\(.responses) responses, \(.tool_calls) tool calls, cost \(.cost_usd // "n/a")"' "$dir/score/usage.json"
+done
