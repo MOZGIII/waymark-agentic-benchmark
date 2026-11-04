@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# experiment-run — run one experiment from create to destroy.
+#
+# Usage: experiment-run [--no-snapshot] [--keep] <run-id>
+#
+# Chains create, prepare, launch, a wait for the agent to finish, collect,
+# snapshot and destroy. Each stage is the same entrypoint an operator would run
+# by hand, so a failure stops here with the run directory as it is, and the
+# remaining stages can be run one at a time. --no-snapshot skips the snapshot;
+# --keep skips destroy and leaves the machines up.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+snapshot=true
+destroy=true
+id=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--no-snapshot) snapshot=false ;;
+	--keep) destroy=false ;;
+	-*) die "unknown option: $1" ;;
+	*) [[ -z "$id" ]] || die "one run id only"; id="$1" ;;
+	esac
+	shift
+done
+[[ -n "$id" ]] || die "usage: experiment-run [--no-snapshot] [--keep] <run-id>"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+bin="$PROJECT_ROOT/bin"
+poll_seconds="${BENCH_POLL_SECONDS:-60}"
+
+# stage <name>: run bin/experiment-<name> for this run, naming it on failure.
+stage() {
+	log "run $id: == $1"
+	"$bin/experiment-$1" "$id" || die "run $id: stage $1 failed; fix and continue from it by hand"
+}
+
+stage create
+stage prepare
+stage launch
+
+# Wait for the unit to end. The unit's own runtime cap ends it at the wall
+# budget, so this only needs patience; a status call that fails (the machine
+# rebooting, a network blip) is retried on the next poll.
+log "run $id: == wait"
+failures=0
+while true; do
+	if status="$("$bin/experiment-status" "$id" 2>/dev/null)"; then
+		failures=0
+		state="$(jq -r '.unit.ActiveState' <<<"$status")"
+		log "run $id: agent $state, $(jq -r '.usage.total // 0' <<<"$status") tokens"
+		[[ "$state" == active || "$state" == activating ]] || break
+	else
+		failures=$((failures + 1))
+		[[ "$failures" -lt 10 ]] || die "run $id: status unreachable ten times in a row"
+	fi
+	sleep "$poll_seconds"
+done
+
+stage collect
+log "run $id: ended with $(manifest_get "$id" .result.exit.reason), $(manifest_get "$id" .result.usage.total) tokens"
+$snapshot && stage snapshot
+$destroy && stage destroy
+log "run $id: done"

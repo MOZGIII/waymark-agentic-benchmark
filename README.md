@@ -21,6 +21,9 @@ takes a run id and works only inside `runs/<run-id>/`, so stages can be re-run.
 7. `bin/experiment-snapshot <run-id>` - power both machines off and snapshot them for the scorer
 8. `bin/experiment-destroy <run-id>` - destroy the VMs; the run directory stays as the record
 
+`bin/experiment-run <run-id>` chains steps 2 to 8, waiting for the agent in between. A failed stage stops
+it with the run directory intact, and the remaining stages can be run by hand.
+
 The host needs `tofu`, `uv` (which provides Ansible from the lock in `ansible/`), `jq`, `git` and `ssh-keygen`.
 
 ## Layout
