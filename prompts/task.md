@@ -17,8 +17,9 @@ for the durable background work.
 Run these on `prod` at exactly these versions and ports. Do not replace any of them with your own
 implementation.
 
-- Keycloak `quay.io/keycloak/keycloak:26.8.1`, HTTP on port 8180, realm `app`. Registration creates
-  the user here; its Keycloak user id is the user id everywhere else.
+- Keycloak `quay.io/keycloak/keycloak:26.8.1`, HTTP on port 8180, realm `app` with a public client
+  `scorer` that has direct access grants enabled. Registration creates the user here; its Keycloak
+  user id is the user id everywhere else.
 - Mailpit `axllent/mailpit:v1.33.0`, SMTP on port 1025, HTTP API on port 8025.
 - Garage `dxflrs/garage:v2.5.0`, S3 API on port 3900, region `garage`, with a bucket `avatars` and an
   imported key with access key id `GK0000000000000000000ba5eb` and secret
