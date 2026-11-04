@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# render-prompt — write the prompt of one run from the frozen template.
+#
+# Usage: render-prompt <run-id>
+#
+# Takes the framework and tier from the manifest, substitutes the framework's
+# name and docs root from frameworks/<framework>.env into prompts/task.md plus
+# prompts/tiers/<tier>.md, writes runs/<run-id>/prompt.md, and records the
+# hashes of the template and of the rendered text in the manifest. HTML
+# comment blocks on their own lines are dropped: they are notes to the
+# maintainers, not part of what the agent reads.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: render-prompt <run-id>"
+id="$1"
+run_id_check "$id"
+require_cmd jq sha256sum
+
+framework="$(manifest_get "$id" .framework)"
+tier="$(manifest_get "$id" .tier)"
+[[ "$framework" != null && "$tier" != null ]] || die "run $id has no framework and tier; see bin/matrix"
+
+env_file="$PROJECT_ROOT/frameworks/$framework.env"
+template="$PROJECT_ROOT/prompts/task.md"
+addendum="$PROJECT_ROOT/prompts/tiers/$tier.md"
+[[ -f "$env_file" ]] || die "unknown framework: $framework"
+[[ -f "$addendum" ]] || die "unknown tier: $tier"
+
+# shellcheck source=/dev/null
+. "$env_file"
+: "${FRAMEWORK_NAME:?$env_file sets no FRAMEWORK_NAME}"
+: "${FRAMEWORK_DOCS_URL:?$env_file sets no FRAMEWORK_DOCS_URL}"
+
+text="$(cat "$template" "$addendum" | sed '/^<!--$/,/^-->$/d' | sed '/./,$!d')"
+text="${text//\{\{framework\}\}/$FRAMEWORK_NAME}"
+text="${text//\{\{docs_url\}\}/$FRAMEWORK_DOCS_URL}"
+[[ "$text" != *"{{"* ]] || die "unresolved placeholder in the prompt"
+
+dir="$(run_dir "$id")"
+printf '%s\n' "$text" >"$dir/prompt.md"
+
+manifest_set "$id" .prompt "$(jq -n \
+	--arg template "$(sha256sum "$template" | cut -c1-64)" \
+	--arg addendum "$(sha256sum "$addendum" | cut -c1-64)" \
+	--arg rendered "$(sha256sum "$dir/prompt.md" | cut -c1-64)" \
+	'{template_sha256: $template, tier_sha256: $addendum, rendered_sha256: $rendered}')"
+log "run $id: prompt rendered for $FRAMEWORK_NAME, tier $tier"

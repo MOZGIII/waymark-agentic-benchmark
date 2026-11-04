@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# matrix — expand a framework x agent x tier x repetition grid into runs.
+#
+# Usage: matrix [--write] [--frameworks a,b] [--agents a,b] [--tiers a,b]
+#               [--repetitions N] <prefix>
+#
+# Prints one line per run: the run id and its parameters. With --write, also
+# creates runs/<id>/manifest.json holding them, which is what the other
+# entrypoints read; existing manifests are left alone. Run ids are
+# <prefix>-<framework>-<agent>-<tier>-<repetition>. Models come from
+# BENCH_MODEL_CLAUDE and BENCH_MODEL_CODEX in .env. Nothing is started.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+frameworks=(waymark temporal hatchet dbos celery)
+agents=(claude codex)
+tiers=(bare docs)
+repetitions=3
+write=false
+prefix=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--write) write=true ;;
+	--frameworks) IFS=, read -ra frameworks <<<"$2"; shift ;;
+	--agents) IFS=, read -ra agents <<<"$2"; shift ;;
+	--tiers) IFS=, read -ra tiers <<<"$2"; shift ;;
+	--repetitions) repetitions="$2"; shift ;;
+	-*) die "unknown option: $1" ;;
+	*) [[ -z "$prefix" ]] || die "one prefix only"; prefix="$1" ;;
+	esac
+	shift
+done
+[[ -n "$prefix" ]] ||
+	die "usage: matrix [--write] [--frameworks a,b] [--agents a,b] [--tiers a,b] [--repetitions N] <prefix>"
+run_id_check "$prefix"
+load_env
+require_cmd jq
+
+# model_for <agent>: the pinned model of an agent, from .env.
+model_for() {
+	case "$1" in
+	claude) printf '%s' "${BENCH_MODEL_CLAUDE:?set BENCH_MODEL_CLAUDE in .env}" ;;
+	codex) printf '%s' "${BENCH_MODEL_CODEX:?set BENCH_MODEL_CODEX in .env}" ;;
+	*) die "unknown agent: $1" ;;
+	esac
+}
+
+for framework in "${frameworks[@]}"; do
+	[[ -f "$PROJECT_ROOT/frameworks/$framework.env" ]] || die "unknown framework: $framework"
+	for agent in "${agents[@]}"; do
+		model="$(model_for "$agent")"
+		for tier in "${tiers[@]}"; do
+			[[ -f "$PROJECT_ROOT/prompts/tiers/$tier.md" ]] || die "unknown tier: $tier"
+			for ((rep = 1; rep <= repetitions; rep++)); do
+				id="$prefix-$framework-$agent-$tier-$rep"
+				run_id_check "$id"
+				printf '%s framework=%s agent=%s model=%s tier=%s repetition=%s\n' \
+					"$id" "$framework" "$agent" "$model" "$tier" "$rep"
+				if $write && [[ ! -f "$(manifest_path "$id")" ]]; then
+					manifest_set "$id" . "$(jq -n --arg id "$id" --arg framework "$framework" \
+						--arg agent "$agent" --arg model "$model" --arg tier "$tier" --argjson rep "$rep" \
+						'{run_id: $id, framework: $framework, agent: $agent, model: $model, tier: $tier, repetition: $rep}')"
+				fi
+			done
+		done
+	done
+done

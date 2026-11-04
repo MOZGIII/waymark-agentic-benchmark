@@ -4,9 +4,10 @@
 #
 # Usage: experiment-launch <run-id>
 #
-# Needs the run prepared and a prompt at runs/<run-id>/prompt.md. Takes the
-# agent and model from the manifest, falling back to BENCH_AGENT and
-# BENCH_MODEL, and the budgets from BENCH_TOKEN_BUDGET, BENCH_TURN_BUDGET and
+# Needs the run prepared. Renders the prompt from the frozen template when
+# runs/<run-id>/prompt.md does not exist yet, so a hand-written prompt is
+# possible for ad-hoc runs. Takes the agent and model from the manifest,
+# falling back to BENCH_AGENT and BENCH_MODEL, and the budgets from BENCH_TOKEN_BUDGET, BENCH_TURN_BUDGET and
 # BENCH_WALL_BUDGET; records all of them. Pushes the agent/ bundle, the prompt
 # and the API key to the dev user and starts agent/run-agent as a transient
 # systemd unit whose lifetime is capped at the wall budget. Refuses to start
@@ -26,7 +27,10 @@ dir="$(run_dir "$id")"
 [[ "$(manifest_get "$id" .destroyed_at)" == null ]] || die "run $id was destroyed"
 [[ "$(manifest_get "$id" .prepare.finished_at)" != null ]] || die "run $id is not prepared"
 [[ "$(manifest_get "$id" .launched_at)" == null ]] || die "run $id was already launched"
-[[ -f "$dir/prompt.md" ]] || die "no $dir/prompt.md"
+if [[ ! -f "$dir/prompt.md" ]]; then
+	[[ "$(manifest_get "$id" .framework)" != null ]] || die "no $dir/prompt.md and no framework to render it from"
+	"$PROJECT_ROOT/libexec/render-prompt" "$id"
+fi
 
 agent="$(manifest_get "$id" .agent)"
 [[ "$agent" != null ]] || agent="${BENCH_AGENT:?set BENCH_AGENT in .env or .agent in the manifest}"
