@@ -8,13 +8,13 @@ everything it checks ([task.md](task.md)).
 
 - **Usage**, from the manifest and event stream, no machines: tokens by kind, the CLI's cost estimate,
   wall time from launch to exit, responses, tool calls, exit reason. Deterministic and free.
-- **Correctness**, from the snapshots: a restore root per provider boots a fresh pair from the run's two
-  snapshots on a new private network, a test bundle runs on the restored workstation, the pair is
-  destroyed. The tests run there because only the workstation has the `prod` alias and the private
-  network. One pair at a time.
-- **Elegance**, from the workspace: a judge prompt with a fixed rubric, several samples per run through
-  the API with the median kept, plus proxies that need no judgment: lines of code, files, dependencies,
-  lint findings.
+- **Correctness**, from the snapshots: the experiment root is applied again with the run's two
+  snapshot ids, so a fresh pair boots as the agent left it on the same private addresses; a test
+  bundle runs on the restored workstation; the pair is destroyed. The tests run there because only
+  the workstation has the `prod` alias and the private network. One pair at a time.
+- **Elegance**, from the workspace: a judge prompt with a fixed rubric, several samples per run
+  through the API with the median kept, plus proxies that need no judgment: lines of code, files,
+  dependencies, lint findings.
 
 Each layer writes its record into the run directory; a report command folds any set of run directories
 into one comparative document, pushed with them to the results repository.

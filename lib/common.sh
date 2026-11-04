@@ -128,16 +128,21 @@ ansible_playbook() {
 
 # ssh_machine <run-id> <workstation|production> <ssh-args>...: ssh to one of
 # the run's machines as the provisioning user with the host's key, trusting
-# host keys on first contact into the run's own known_hosts file.
+# host keys on first contact into the run's own known_hosts file. With
+# BENCH_MACHINES=.restore.machines (set by the scoring entrypoints), the
+# restored pair is addressed instead, with its own known_hosts file, since a
+# restored machine has new host keys.
 ssh_machine() {
 	local id="$1" role="$2"
 	shift 2
 	require_cmd ssh
-	local key user address
+	local machines="${BENCH_MACHINES:-.machines}" key user address known_hosts
 	key="$(ssh_key_path)"
-	user="$(manifest_get "$id" .machines.ssh_user)"
-	address="$(manifest_get "$id" ".machines.$role.public_ip")"
-	[[ "$address" != null ]] || die "run $id has no $role recorded; run experiment-create"
-	ssh -i "$key" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$(run_dir "$id")/known_hosts" \
+	user="$(manifest_get "$id" "$machines.ssh_user")"
+	address="$(manifest_get "$id" "$machines.$role.public_ip")"
+	[[ "$address" != null ]] || die "run $id has no $role recorded under $machines"
+	known_hosts="$(run_dir "$id")/known_hosts"
+	[[ "$machines" == .machines ]] || known_hosts+="-restore"
+	ssh -i "$key" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known_hosts" \
 		-o BatchMode=yes "$user@$address" "$@"
 }

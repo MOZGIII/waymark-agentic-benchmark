@@ -37,7 +37,7 @@ resource "hcloud_firewall" "experiment" {
 resource "hcloud_server" "workstation" {
   name         = "${var.run_id}-workstation"
   server_type  = var.workstation_type
-  image        = var.image
+  image        = coalesce(var.workstation_snapshot_id, var.image)
   location     = var.location
   ssh_keys     = [hcloud_ssh_key.host.id]
   firewall_ids = [hcloud_firewall.experiment.id]
@@ -54,7 +54,7 @@ resource "hcloud_server" "workstation" {
 resource "hcloud_server" "production" {
   name         = "${var.run_id}-production"
   server_type  = var.production_type
-  image        = var.image
+  image        = coalesce(var.production_snapshot_id, var.image)
   location     = var.location
   ssh_keys     = [hcloud_ssh_key.host.id]
   firewall_ids = [hcloud_firewall.experiment.id]

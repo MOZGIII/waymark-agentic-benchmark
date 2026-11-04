@@ -5,7 +5,7 @@ resource "linode_instance" "workstation" {
   label           = "${var.run_id}-workstation"
   region          = var.region
   type            = var.workstation_type
-  image           = var.image
+  image           = coalesce(var.workstation_snapshot_id, var.image)
   authorized_keys = [trimspace(var.host_public_key)]
   tags            = [var.run_id]
 
@@ -24,7 +24,7 @@ resource "linode_instance" "production" {
   label           = "${var.run_id}-production"
   region          = var.region
   type            = var.production_type
-  image           = var.image
+  image           = coalesce(var.production_snapshot_id, var.image)
   authorized_keys = [trimspace(var.host_public_key)]
   tags            = [var.run_id]
 

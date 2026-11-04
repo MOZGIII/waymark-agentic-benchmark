@@ -29,6 +29,8 @@ it with the run directory intact, and the remaining stages can be run by hand.
 Separate from running, over any collected runs; see [docs/design/scoring.md](docs/design/scoring.md).
 
 1. `bin/score-usage <run-id>...` - tokens, cost, wall time, responses and tool calls from the run's own records
+2. `bin/score-restore <run-id>` - boot the run's two snapshots as a fresh pair, after the original is destroyed
+3. `bin/score-destroy <run-id>` - destroy the restored pair; the snapshots stay
 
 The host needs `tofu`, `uv` (which provides Ansible from the lock in `ansible/`), `jq`, `git` and `ssh-keygen`.
 

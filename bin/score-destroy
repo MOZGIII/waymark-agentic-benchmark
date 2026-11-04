@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# score-destroy — destroy a run's restored pair.
+#
+# Usage: score-destroy <run-id>
+#
+# Destroys what score-restore applied, under its own state file, and stamps
+# .restore.destroyed_at in the manifest. The snapshots stay.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: score-destroy <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+dir="$(run_dir "$id")"
+provider="$(manifest_get "$id" .provider)"
+[[ "$provider" != null ]] || die "run $id has no provider recorded"
+[[ -f "$dir/restore.tfvars.json" ]] || die "run $id was never restored"
+
+tofu_root experiment "$provider" "$id" restore destroy -input=false -auto-approve \
+	-var-file="$dir/restore.tfvars.json"
+manifest_set "$id" .restore.destroyed_at "\"$(now_utc)\""
+log "run $id: restored pair destroyed"

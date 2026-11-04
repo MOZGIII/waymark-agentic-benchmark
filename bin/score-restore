@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# score-restore — boot a run's two snapshots as a fresh pair for the tests.
+#
+# Usage: score-restore <run-id>
+#
+# Applies tf/experiment/<provider> a second time for the run, under its own
+# state file, with the snapshot ids the snapshot stage recorded, so the pair
+# comes up exactly as the agent left it on the same private addresses. The
+# original pair must be destroyed first: a run has at most one pair alive.
+# Records the restored machines under .restore in the manifest.
+set -euo pipefail
+
+# shellcheck source=../lib/common.sh
+. "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+
+[[ $# -eq 1 ]] || die "usage: score-restore <run-id>"
+id="$1"
+run_id_check "$id"
+load_env
+require_cmd jq
+
+dir="$(run_dir "$id")"
+provider="$(manifest_get "$id" .provider)"
+[[ "$provider" != null ]] || die "run $id has no provider recorded"
+[[ "$(manifest_get "$id" .destroyed_at)" != null ]] || die "run $id: destroy the experiment pair first"
+workstation="$(manifest_get "$id" .snapshot.workstation)"
+production="$(manifest_get "$id" .snapshot.production)"
+[[ "$workstation" != null && "$production" != null ]] || die "run $id has no snapshots; run experiment-snapshot"
+if [[ "$(manifest_get "$id" .restore.created_at)" != null ]]; then
+	[[ "$(manifest_get "$id" .restore.destroyed_at)" != null ]] ||
+		die "run $id has a restored pair; run score-destroy first"
+fi
+
+vars="$dir/restore.tfvars.json"
+jq --arg id "$id-restore" --arg workstation "$workstation" --arg production "$production" '{
+	run_id: $id, host_public_key,
+	workstation_snapshot_id: $workstation, production_snapshot_id: $production
+}' "$dir/experiment.tfvars.json" >"$vars"
+
+manifest_set "$id" .restore "$(jq -n --arg at "$(now_utc)" '{created_at: $at}')"
+tofu_root experiment "$provider" "$id" restore init -input=false
+tofu_root experiment "$provider" "$id" restore apply -input=false -auto-approve -var-file="$vars"
+tofu_root experiment "$provider" "$id" restore output -json >"$dir/restore.outputs.json"
+
+manifest_set "$id" .restore.machines "$(jq '{
+	ssh_user: .ssh_user.value,
+	workstation: .workstation.value,
+	production: .production.value
+}' "$dir/restore.outputs.json")"
+log "run $id: restored workstation $(manifest_get "$id" .restore.machines.workstation.public_ip)," \
+	"production $(manifest_get "$id" .restore.machines.production.public_ip)"

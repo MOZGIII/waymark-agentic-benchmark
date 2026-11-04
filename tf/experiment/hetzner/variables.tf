@@ -41,3 +41,15 @@ variable "production_type" {
   type        = string
   default     = "cpx31"
 }
+
+variable "workstation_snapshot_id" {
+  description = "Boot the workstation from this snapshot of an earlier run; null boots the image."
+  type        = string
+  default     = null
+}
+
+variable "production_snapshot_id" {
+  description = "Boot the production machine from this snapshot of an earlier run; null boots the image."
+  type        = string
+  default     = null
+}

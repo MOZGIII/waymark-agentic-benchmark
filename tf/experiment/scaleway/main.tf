@@ -51,10 +51,19 @@ resource "scaleway_instance_security_group" "experiment" {
 resource "scaleway_instance_ip" "workstation" {}
 resource "scaleway_instance_ip" "production" {}
 
+# When restoring, the root volume is created from the snapshot and the
+# server boots from that volume instead of an image.
+resource "scaleway_block_volume" "workstation" {
+  count       = var.workstation_snapshot_id == null ? 0 : 1
+  name        = "${var.run_id}-workstation"
+  snapshot_id = var.workstation_snapshot_id
+  iops        = 5000
+}
+
 resource "scaleway_instance_server" "workstation" {
   name              = "${var.run_id}-workstation"
   type              = var.workstation_type
-  image             = var.image
+  image             = var.workstation_snapshot_id == null ? var.image : null
   ip_id             = scaleway_instance_ip.workstation.id
   security_group_id = scaleway_instance_security_group.experiment.id
   tags              = [var.run_id, "workstation"]
@@ -68,10 +77,19 @@ resource "scaleway_instance_server" "workstation" {
   depends_on = [scaleway_iam_ssh_key.host]
 }
 
+# When restoring, the root volume is created from the snapshot and the
+# server boots from that volume instead of an image.
+resource "scaleway_block_volume" "production" {
+  count       = var.production_snapshot_id == null ? 0 : 1
+  name        = "${var.run_id}-production"
+  snapshot_id = var.production_snapshot_id
+  iops        = 5000
+}
+
 resource "scaleway_instance_server" "production" {
   name              = "${var.run_id}-production"
   type              = var.production_type
-  image             = var.image
+  image             = var.production_snapshot_id == null ? var.image : null
   ip_id             = scaleway_instance_ip.production.id
   security_group_id = scaleway_instance_security_group.experiment.id
   tags              = [var.run_id, "production"]
