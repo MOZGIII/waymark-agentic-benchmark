@@ -22,3 +22,6 @@ One line each, dated, with the reason. Newest last.
 - 2026-11-04 Third-party services are off-the-shelf at pinned tags, never agent-written: equal for all.
 - 2026-11-04 Agent-written services get a fixed HTTP API in the prompt: the scorer must not adapt per run.
 - 2026-11-04 Garage over MinIO for avatars: MinIO stopped releasing in 2025.
+- 2026-11-04 Scorer: usage, correctness from snapshots, elegance by judge; tests run on the restored workstation.
+- 2026-11-04 Restore from snapshots only, never from tarballs: rebuilding would measure the scorer, not the agent.
+- 2026-11-04 Judge model and sample count configurable, defaulting to Opus via API key and five samples.
